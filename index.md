@@ -1,7 +1,7 @@
 
 # Introduction
 
-This document explains the implementation of Suneido, including cSuneido (C++), jSuneido (Java), gSuneido (Go), suneido.js (JavaScript).
+This document explains the high level design and implementation of Suneido, including cSuneido (C++), jSuneido (Java), gSuneido (Go), suneido.js (JavaScript).
 
 This is not a guide or reference to using Suneido. See the Users Manual for that.
 
