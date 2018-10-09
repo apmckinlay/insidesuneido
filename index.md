@@ -103,6 +103,7 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 - Has its own byte code and interpreter
 - Suneido values (including integers and strings) implement the Value interface
 - Uses panic and recover to implement exceptions
+- Aiming to work in both 32 and 64 bit
 
 **_suneido.js_** - JavaScript
 
@@ -110,7 +111,8 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 - Transpiles from Suneido code to JavaScript, currently (2018-01-30) using AST from jSuneido parser
 - Does not include the database
 - Written in TypeScript
-- Biggest challenge is to somehow run existing user interfaces (which are win32 specific and assume low latency)
+- One challenge is to somehow run existing user interfaces (which are win32 specific and assume low latency)
+- Another challenge is that current code assumes blocking/synchronous, but browsers want async.
 - Although it's not specifically targeted, most of the development is with V8 with node.js
 
 # Source Code Layout
@@ -147,6 +149,8 @@ Use `<cstdint>`
 Use `int64_t` instead of `long long`
 
 Avoid “long” because of confusion over whether it is 32 or 64 bits. On Win32 long is 32 bits but in jSuneido/Java long is 64 bits. Use int or int32_t or int64_t.
+
+Code is formatted with clang-format. (I have Visual Studio set up to format on save.)
 
 **_jSuneido_**
 
@@ -195,7 +199,9 @@ BENCHMARK(dnum_add)
 
 Uses jUnit.
 
-It's not required, but it's nice to run Infinitest within Eclipse to run the tests automatically after every change.
+It's not required, but it's nice to run Infinitest within Eclipse to run the tests automatically after every change. See infinitest.args and infinitest.filters
+
+There is a simple benchmark function. This is normally called by a jUnit test but it will be skipped by Infinitest.
 
 **_gSuneido_**
 
@@ -306,7 +312,7 @@ func NewSmi(i int) interface{} {
 }
 ```
 
-We can now define methods on \*smi to support the Value interface. (See suint.go)
+We can now define methods on *smi to support the Value interface. (See suint.go)
 
 To get the integer back out of the pointer we have to use the unsafe package, but in a safe way :-)
 
