@@ -1,8 +1,8 @@
 - [Introduction](#introduction)
 - [History](#history)
-    - [Past](#past)
-    - [Present](#present)
-    - [Future](#future)
+  - [Past](#past)
+  - [Present](#present)
+  - [Future](#future)
 - [Motivation](#motivation)
 - [Implementations](#implementations)
 - [Source Code Layout](#source-code-layout)
@@ -10,29 +10,29 @@
 - [Tests & Benchmarks](#tests--benchmarks)
 - [Portable Tests](#portable-tests)
 - [Language](#language)
-    - [Values](#values)
-    - [Numbers](#numbers)
-        - [Decimal Floating Point](#decimal-floating-point)
-        - [Integers](#integers)
-    - [Strings](#strings)
-    - [Exceptions](#exceptions)
-    - [Functions & Methods](#functions--methods)
-        - [Arguments](#arguments)
-        - [Parameters](#parameters)
-        - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
+  - [Values](#values)
+  - [Numbers](#numbers)
+    - [Decimal Floating Point](#decimal-floating-point)
+    - [Integers](#integers)
+  - [Strings](#strings)
+  - [Exceptions](#exceptions)
+  - [Functions & Methods](#functions--methods)
+    - [Arguments](#arguments)
+    - [Parameters](#parameters)
+    - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
 - [Compiler](#compiler)
-    - [Interpreter](#interpreter)
-    - [Concurrency](#concurrency)
+  - [Interpreter](#interpreter)
+  - [Concurrency](#concurrency)
 - [Database](#database)
-    - [Storage](#storage)
-    - [Shutdown & Startup](#shutdown--startup)
-    - [Recovery](#recovery)
-    - [Packing](#packing)
-    - [Records](#records)
-    - [Indexes](#indexes)
-    - [Queries](#queries)
-        - [Query Optimization](#query-optimization)
-    - [Transactions](#transactions)
+  - [Storage](#storage)
+  - [Shutdown & Startup](#shutdown--startup)
+  - [Recovery](#recovery)
+  - [Packing](#packing)
+  - [Records](#records)
+  - [Indexes](#indexes)
+  - [Queries](#queries)
+    - [Query Optimization](#query-optimization)
+  - [Transactions](#transactions)
   
 # Introduction
 
@@ -84,34 +84,34 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 
 **_cSuneido_** - C++
 
-* Conservative garbage collection with Boehm-Demers-Weiser
-* Has its own byte code and interpreter
-* 32 bit
-* Single threaded but multi-tasking with Win32 fibers
-* All Suneido values inherit from SuValue
+- Conservative garbage collection with Boehm-Demers-Weiser
+- Has its own byte code and interpreter
+- 32 bit
+- Single threaded but multi-tasking with Win32 fibers
+- All Suneido values inherit from SuValue
 
 **_jSuneido_** - Java
 
-* Compiles Suneido code to JVM byte code
-* Multi-threaded
-* Used for production servers
-* Uses bare JVM types for integers and strings
+- Compiles Suneido code to JVM byte code
+- Multi-threaded
+- Used for production servers
+- Uses bare JVM types for integers and strings
 
 **_gSuneido_** - Go
 
-* Incomplete, work in progress
-* Has its own byte code and interpreter
-* Suneido values (including integers and strings) implement the Value interface
-* Uses panic and recover to implement exceptions
+- Incomplete, work in progress
+- Has its own byte code and interpreter
+- Suneido values (including integers and strings) implement the Value interface
+- Uses panic and recover to implement exceptions
 
 **_suneido.js_** - JavaScript
 
-* Incomplete, work in progress
-* Transpiles from Suneido code to JavaScript, currently (2018-01-30) using AST from jSuneido parser
-* Does not include the database
-* Written in TypeScript
-* Biggest challenge is to somehow run existing user interfaces (which are win32 specific and assume low latency)
-* Although it's not specifically targeted, most of the development is with V8 with node.js
+- Incomplete, work in progress
+- Transpiles from Suneido code to JavaScript, currently (2018-01-30) using AST from jSuneido parser
+- Does not include the database
+- Written in TypeScript
+- Biggest challenge is to somehow run existing user interfaces (which are win32 specific and assume low latency)
+- Although it's not specifically targeted, most of the development is with V8 with node.js
 
 # Source Code Layout
 
@@ -123,16 +123,16 @@ Source files starting with an "su" prefix generally implement things that are vi
 
 **_jSuneido_**
 
-* **code** - compiled Suneido code goes in this package
-* **compiler** - lexing, parsing, and byte code generation
-* **database**
-  * **immudb** - current storage engine used by database
-  * **query** - parsing and execution of queries
-  * **expr** - expressions for where and extend
-  * **server** - client/server communications
-* **runtime** - run-time support code
-  * **builtin** - Suneido built-in functions and classes
-* **util** - code that is not specific to Suneido
+- **code** - compiled Suneido code goes in this package
+- **compiler** - lexing, parsing, and byte code generation
+- **database**
+  - **immudb** - current storage engine used by database
+  - **query** - parsing and execution of queries
+  - **expr** - expressions for where and extend
+  - **server** - client/server communications
+- **runtime** - run-time support code
+  - **builtin** - Suneido built-in functions and classes
+- **util** - code that is not specific to Suneido
 
 **_gSuneido_**
 
@@ -441,19 +441,19 @@ base.Func (in callable.go) describes the parameters for a function with Nparams,
 
 This process includes:
 
-* expanding @args (like JavaScript "spread")
-* constructing @params (like JavaScript "rest")
-* filling in default values
-* filling in dynamic defaults
-* matching up named arguments
-* checking for excess or missing arguments.
+- expanding @args (like JavaScript "spread")
+- constructing @params (like JavaScript "rest")
+- filling in default values
+- filling in dynamic defaults
+- matching up named arguments
+- checking for excess or missing arguments.
 
 As usual, we want minimal overhead for the simple cases while still allowing for the more complex cases. We don’t want much overhead on most calls.
 
 Optimizations:
 
-* @args =\> @params should not expand args and then build params. It should just copy (or slice for @+1 args) the args object.
-* Simple calls e.g. fn(1,2) should bypass argument massage and go directly to function(a,b)
+- @args =\> @params should not expand args and then build params. It should just copy (or slice for @+1 args) the args object.
+- Simple calls e.g. fn(1,2) should bypass argument massage and go directly to function(a,b)
 
 |             | simple params | default params   | @params | raw        |
 | :---------- | :------------ | :--------------- | :------ | :--------- |
@@ -539,9 +539,9 @@ Although cSuneido is not completely append-only like jSuneido it only updates in
 
 The database is stored in three files:
 
-* suneido.dbd - data
-* suneido.dbi - indexes
-* suneido.dbc - a hash of the data size (see Shutdown & Startup)
+- suneido.dbd - data
+- suneido.dbi - indexes
+- suneido.dbc - a hash of the data size (see Shutdown & Startup)
 
 Since Java does not support it, unlike cSuneido, we never unmap chunks.
 
@@ -549,9 +549,9 @@ Previously jSuneido mapped the chunks lazily, but to avoid concurrency issues, t
 
 jSuneido's database implementation is append-only i.e. the dbd and dbi files are only appended to. Once written, the file contents is never updated. This has multiple benefits:
 
-* Crash recovery is simplified
-* Multi-version transactions are simple
-* Appends are optimal for performance, especially on SSD
+- Crash recovery is simplified
+- Multi-version transactions are simple
+- Appends are optimal for performance, especially on SSD
 
 The data file is written when a transaction commits. Up to that point all updates are done in memory, private to the transaction. Aborting a transaction simply discards the in memory information. This makes it less likely that a transaction will be partially written, but it is still possible e.g. due to a crash. We don't have to worry about a transaction being partially rolled back. (Since rollback doesn't touch the database files.)
 
@@ -579,10 +579,10 @@ At startup (see Shutdown & Startup) if corruption is detected, then the database
 
 Corruption can occur for several reasons:
 
-* Crash of process or operating system
-* Hardware or operating system error e.g. disk or memory
-* Suneido process killed during io
-* Bugs in Suneido
+- Crash of process or operating system
+- Hardware or operating system error e.g. disk or memory
+- Suneido process killed during io
+- Bugs in Suneido
 
 This process will attempt to recover the database as of some previous point in time.
 
