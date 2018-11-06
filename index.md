@@ -22,6 +22,9 @@
     - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
 - [Compiler](#compiler)
   - [Interpreter](#interpreter)
+  - [Classes](#classes)
+    - [Private Class Members](#private-class-members)
+    - [Getters](#getters)
   - [Concurrency](#concurrency)
 - [Database](#database)
   - [Storage](#storage)
@@ -518,6 +521,36 @@ jSuneido compiles to JVM byte code which is run by the JRE.
 **_suneido.js_**
 
 suneido.js compiles to JavaScript which is run by e.g. the browser.
+
+## Classes
+
+Classes and instances of classes were originally just objects with the additon of a class reference. In jSuneido classes and instances became maps from strings (member names) to values. (No unnamed list members.)
+
+### Private Class Members
+
+Suneido fakes private members by prefixing them with their class name. e.g. in MyClass a private member foo becomes MyClass_foo. Although this is primarily an implementation detail, these members are still visible to Suneido code and tests take advantage of this. However, we try to avoid bypassing privacy in actual application code.
+
+Anonymous classes are given a system generated internal name (e.g. Class123) for privatization.
+
+Privatization is done at compile time, for class members like:
+
+    foo: 123
+
+and for member references like:
+
+    .foo
+
+### Getters
+
+If code reads a member that does not exist, Suneido will look for a "getter" i.e. a method that will provide the value, either Get_(name) or get_name or Get_Name
+
+Private getters e.g. get_foo() are privatized to Get_MyClass_foo
+
+In retrospect, this was a poor naming choice because get_name and Get_Name are quite common names and get used without intending to be getters. A better choice might have been getter_name and Getter_Name. Unfortunately, this is difficult to change since it is hard to tell which methods are intended to be getters and which just happened to be named that way.
+
+Note: get_Name and Get_name are invalid which is also not ideal.
+
+Ideally, only class member definitions would handle getters specially (i.e. converting get_foo to Get_MyClass_foo). However, currently the same conversion is done to references. This is necessary because we have many get_ methods called as regular (non-getter) methods
 
 ## Concurrency
 
