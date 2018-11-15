@@ -347,7 +347,7 @@ Ops.cat will return a Concats if the combined length is greater than LARGE (256)
 
 Concats wraps a StringBuilder. However, we don't want to allocate a new StringBuilder every time so if we concatenate onto a Concats we try to append to the StringBuilder. To detect modification Concats stores its own length, which may be shorter than the StringBuilder's length.
 
-```
+```Go
 s = 'x'.Repeat(200) $ 'x'.Repeat(200)
 // >256 so returns a Concats
 
@@ -555,6 +555,8 @@ Ideally, only class member definitions would handle getters specially (i.e. conv
 ## Concurrency
 
 # Database
+
+![](images/suneido&#32;dbms&#32;design.svg)
 
 Currently only cSuneido and jSuneido implement the database. They use different database file formats. However, the format used by dump and load is the same. The normal method of converting a database between cSuneido and jSuneido is to dump on one and load on the other.
 
