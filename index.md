@@ -673,19 +673,27 @@ Packed values are in ByteBuffer's.
 
 ## Queries
 
-### Query Optimization
+Query where and extend expressions are a subset of language expressions. The subset has expanded over time.
 
 Lexical scanning uses the same code as for the language with a different set of keywords.
+
+cSuneido has a separate code for parsing query expressions, but this means a lot of duplication.
+
+jSuneido uses the same expression parser for both the language and queries. It uses different "generators" to build different AST nodes. However, the abstract generator complicates the parser somewhat.
 
 Parsing builds an AST which is used to optimize and execute the query.
 
 Each query operation e.g. where or join is a node class. Optimization and execution is done by methods. All the node types inherit from Query.
 
+Query (and query expression) execution is done by a tree walking interpreter. There is no byte code as there is for the language.
+
+### Query Optimization
+
 The first stage of optimization is **transform**. It makes changes that are assumed to be always beneficial. It does not estimate any costs. Transform rearranges
 
 The second stage is the cost based **optimize** which chooses strategies and indexes. The costs are estimated very roughly based on number of bytes read.
 
-Query operations implement multiple strategies.
+Query operations implement multiple strategies. 
 
 ## Transactions
 
