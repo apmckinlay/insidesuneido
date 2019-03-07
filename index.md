@@ -729,4 +729,14 @@ Versioning is handled by tagging index entries with a timestamp. Transactions wi
 
 Versioning is handled by the append-only database. A given version is simply a prefix of the database.
 
-Update transactions operate in memory. They do not update the data file until they commit.
+ReadTransaction is the simplest. It operates "as of" its start time i.e. on that "version" of the database. It does not need to track actions. It does not block any other activity. Therefore, it has no limits in terms of actions or time.
+
+ReadWriteTransaction is the base class for BulkTransaction and UpdateTransaction
+
+UpdateTransaction operates in memory. They do not update the data file until they commit. UpdateTransactions use OverlayIndex to merge the in-memory changes from the current transaction with the database version (so it sees it's own changes). OverlayIndex.Iter tracks reads (with TransactionReads which uses IndexRange) so they can be validated at commit (to detect conflicts). Changes are also tracked and used to update the actual database state at commit.
+
+Because UpdateTransaction tracks reads and writes, there are limits on how much a single transaction can do, to prevent excessive memory use. SchemaTransaction and RebuildTransaction are excluded from these limits.
+
+There are also limits on the number of overlapping transactions outstanding.
+
+BulkTransaction is used for load, compact, and rebuild. It is exclusive i.e. no other concurrent transactions are allowed. Unlike normal transactions, it writes to the database file incrementally, prior to commit.
