@@ -480,6 +480,8 @@ We specialize for up to five unnamed arguments.
 
 **_gSuneido_**
 
+gSuneido also has "signatures" on ParamSpec and ArgSpec which provide fast matching. This is mostly for built in functions since interpreted functions already have so much overhead. 
+
 **_suneido.js_**
 
 Special comments in the code are used by a code generator to generate adapters for each function
@@ -505,6 +507,20 @@ Parsing produces an AST which is then used to generate byte code. (Similar to jS
 Currently (2018) jSuneido is used to parse to an AST which is then used by Suneido code to generate JavaScript.
 
 [Precedence Climbing Expression Parsing](https://thesoftwarelife.blogspot.com/2018/10/precedence-climbing-expression-parsing.html)
+
+## Byte Code
+
+**jSuneido**
+
+Uses Java byte code. 
+
+**cSuneido**
+
+Uses every possible byte value. This makes the code compact but it means more complicated interpreter dispatch. 
+
+**gSuneido**
+
+Does not pack any options or arguments into the op codes. This simplified the interpreter. It also means there are lots of byte codes available, allowing specialized op codes for things like for-in. 
 
 ## Interpreter
 
