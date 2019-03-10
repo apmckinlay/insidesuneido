@@ -21,6 +21,7 @@
     - [Parameters](#parameters)
     - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
 - [Compiler](#compiler)
+  - [Byte Code](#byte-code)
   - [Interpreter](#interpreter)
   - [Classes](#classes)
     - [Private Class Members](#private-class-members)
@@ -226,6 +227,8 @@ The files are designed to be read by the Suneido lexer/scanner and executed by "
 
 Suneido is a dynamically typed language. Variables may hold different types at different times.
 
+Some types have multiple internal representations. Numbers can be either small integers or decimal floating point. Strings can be either simple strings, deferred concatenations, or exceptions (with an attached call stack). This is mostly invisible at the Suneido language level.
+
 **_cSuneido_**
 
 SuValue (see suvalue.h/cpp) is the base class for SuString, SuNumber, SuObject, etc. that are normally allocated on the heap and referenced by pointer.
@@ -240,7 +243,7 @@ Because there is no common base class or interface for values, operations (see o
 
 **_gSuneido_**
 
-Values implement the Value interface (see value.go). Like Java, some types are used without wrapping (e.g. strings) but in Go we can define a new type based on a builtin type and support the Value interface. Therefore, fewer explicit runtime type checks are required.
+Values implement the Value interface (see value.go). Like Java, some types are used without wrapping (e.g. strings) but in Go we can define a new type based on a built in type and support the Value interface. Therefore, fewer explicit runtime type checks are required.
 
 **_suneido.js_**
 
@@ -512,15 +515,15 @@ Currently (2018) jSuneido is used to parse to an AST which is then used by Sunei
 
 **jSuneido**
 
-Uses Java byte code. 
+Uses Java byte code.
 
 **cSuneido**
 
-Uses every possible byte value. This makes the code compact but it means more complicated interpreter dispatch. 
+Uses every possible byte value. This makes the code compact but it complicates the interpreter.
 
 **gSuneido**
 
-Does not pack any options or arguments into the op codes. This simplified the interpreter. It also means there are lots of byte codes available, allowing specialized op codes for things like for-in. 
+Does not pack any options or arguments into the op codes or use variable length ints for arguments. This simplifies the interpreter. It also means there are lots of byte codes available, allowing specialized op codes for things like for-in.
 
 ## Interpreter
 
@@ -534,13 +537,15 @@ jSuneido compiles to JVM byte code which is run by the JRE.
 
 **_gSuneido_**
 
+A standard loop containing a giant switch with one case per op code.
+
 **_suneido.js_**
 
 suneido.js compiles to JavaScript which is run by e.g. the browser.
 
 ## Classes
 
-Classes and instances of classes were originally just objects with the additon of a class reference. In jSuneido classes and instances became maps from strings (member names) to values. (No unnamed list members.)
+Classes and instances of classes were originally just objects with the additon of a class reference. In jSuneido classes and instances became maps from strings (member names) to values. (No unnamed list members.) This approach was migrated to **cSuneido**, and is also used in **gSuneido**.
 
 ### Private Class Members
 
