@@ -249,7 +249,7 @@ Values implement the Value interface (see value.go). Like Java, some types are u
 
 ## Numbers
 
-Don't narrow results - too much overhead.
+Don't narrow results - too much overhead. This means that we have to canonicalize values in SuObject so ob[5] is the same whether the 5 is an integer or a dnum.
 
 Divide handles even integer division specially. Running the ETA tests found roughly 1/3 of divides were even integer divisions. Benchmark went from 43 ns to 14 ns and the extra case doesn't seem to slow down normal usage.
 
