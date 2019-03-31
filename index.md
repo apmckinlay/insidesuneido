@@ -119,6 +119,16 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 - Another challenge is that current code assumes blocking/synchronous, but browsers want async.
 - Although it's not specifically targeted, most of the development is with V8 with node.js
 
+# Low Level
+
+## Endian
+
+cSuneido inadvertently used little endian (least significant byte first) for some things (e.g. records/tuples) because that was native byte order on x86. 
+
+But to make packed values sort properly, numbers had to be stored big endian (most significant byte first).
+
+gSuneido (in 2019) moved to standardize on big endian. 
+
 # Source Code Layout
 
 **_cSuneido_**
@@ -261,7 +271,7 @@ Numbers in Suneido are stored in **decimal** floating point so that decimal frac
 
 This means we can't use the **binary** floating point numbers normally provided by hardware and languages.
 
-As of 2018-08 cSuneido, jSuneido, and gSuneido all use an implementation with a 64 bit coefficient and 8 bit sign and exponent. Only 16 of the possible 19 decimal digits are used. This allows splitting into two 8 decimal digit halves which fit into 32 bit for faster processing.  (cSuneido is 32 bit so it cannot take advantage of 64 bit instructions. In Visual C++ most 64 bit operations are subroutine calls.) The coefficient is kept “maximized” i.e. “shifted” left as far as possible.
+As of 2018-08 cSuneido, jSuneido, and gSuneido all use an implementation (Dnum) with a 64 bit coefficient and 8 bit sign and exponent. Only 16 of the possible 19 decimal digits are used. This allows splitting into two 8 decimal digit halves which fit into 32 bit for faster processing.  (cSuneido is 32 bit so it cannot take advantage of 64 bit instructions. In Visual C++ 32 bit code most 64 bit operations are subroutine calls.) The coefficient is kept “maximized” i.e. “shifted” left as far as possible.
 
 *cSuneido* previously had an implementation of decimal floats that used four 16 bit integers, each holding four decimal digits (i.e. 0 to 9999) plus a sign and an exponent. The intent was to provide 16 digits of precision. However, because the exponent had 4 digit granularity, the actual precision could be as low as 13 digits.
 
@@ -270,6 +280,8 @@ As of 2018-08 cSuneido, jSuneido, and gSuneido all use an implementation with a 
 Previously there were some minor issues with inconsistent results between *cSuneido* and *jSuneido* due to the different implementations and precisions. This should no longer be an issue - they should now give identical results.
 
 Unfortunately, JavaScript does not have 64 bit integers, it only has binary floating point numbers, with bitwise operations defined as 32 bit.  (Internally, JavaScript implementations usually use integers.) To work around this, *suneido.js* uses JavaScript floats as 52 bit integers. This provides a little over 15 digits of precision - not quite the 16 that Suneido nominally provides.
+
+For compatibility, the packed format was *not* changed with the switch to Dnum. However, the old format is not the most efficient for Dnum. The plan is to switch this (along with several other representation improvements - records/tuples and packed objects) in 2019. 
 
 [Bit Twiddling (Dnum)](https://thesoftwarelife.blogspot.com/2018/03/bit-twiddling.html)
 
