@@ -5,6 +5,8 @@
   - [Future](#future)
 - [Motivation](#motivation)
 - [Implementations](#implementations)
+- [Low Level](#low-level)
+  - [Representation](#representation)
 - [Source Code Layout](#source-code-layout)
 - [Coding Style](#coding-style)
 - [Tests & Benchmarks](#tests--benchmarks)
@@ -33,6 +35,8 @@
   - [Recovery](#recovery)
   - [Packing](#packing)
   - [Records](#records)
+    - [Old Format (before 2019)](#old-format-before-2019)
+    - [New Format (after 2019)](#new-format-after-2019)
   - [Indexes](#indexes)
   - [Queries](#queries)
     - [Query Optimization](#query-optimization)
@@ -121,13 +125,15 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 
 # Low Level
 
-## Endian
+## Representation
 
 cSuneido inadvertently used little endian (least significant byte first) for some things (e.g. records/tuples) because that was native byte order on x86. 
 
 But to make packed values sort properly, numbers had to be stored big endian (most significant byte first).
 
-gSuneido (in 2019) moved to standardize on big endian. 
+gSuneido (in 2019) moved to standardize on big endian.
+
+Although the in-memory and on-disk representations do not need to be compatible, records and packed values are used in the client-server protocol so they must be the same to be interoperable.
 
 # Source Code Layout
 
@@ -495,7 +501,7 @@ We specialize for up to five unnamed arguments.
 
 **_gSuneido_**
 
-gSuneido also has "signatures" on ParamSpec and ArgSpec which provide fast matching. This is mostly for built in functions since interpreted functions already have so much overhead. 
+gSuneido also has "signatures" on ParamSpec and ArgSpec which provide fast matching. This is mostly for built in functions since interpreted functions already have so much overhead.
 
 **_suneido.js_**
 
@@ -504,6 +510,8 @@ Special comments in the code are used by a code generator to generate adapters f
 # Compiler
 
 Suneido uses a hand-written lexical scanner and recursive descent parser.
+
+Note: There is also a parser written in Suneido (Tdop), however it is quite slow which limits its usefulness.
 
 **_cSuneido_**
 
@@ -517,11 +525,13 @@ Parsing produces an AST which is then used to generate Java byte code using the 
 
 Parsing produces an AST which is then used to generate byte code. (Similar to jSuneido)
 
+Constant folding is done as part of the AST building. This is naturally bottom up, and eliminates the need for a separate tree traversal. It is implemented as a wrapper (decorator) around the node factory, so it is easily bypassed if you want the AST one to one with the source code.
+
+gSuneido uses [Precedence Climbing Expression Parsing](https://thesoftwarelife.blogspot.com/2018/10/precedence-climbing-expression-parsing.html), whereas cSuneido and jSuneido just use recursive descent.
+
 **_suneido.js_**
 
 Currently (2018) jSuneido is used to parse to an AST which is then used by Suneido code to generate JavaScript.
-
-[Precedence Climbing Expression Parsing](https://thesoftwarelife.blogspot.com/2018/10/precedence-climbing-expression-parsing.html)
 
 ## Byte Code
 
@@ -589,7 +599,7 @@ Ideally, only class member definitions would handle getters specially (i.e. conv
 
 # Database
 
-![](images/suneido&#32;dbms&#32;design.svg)
+![database design](images/suneido&#32;dbms&#32;design.svg)
 
 Currently only cSuneido and jSuneido implement the database. They use different database file formats. However, the format used by dump and load is the same. The normal method of converting a database between cSuneido and jSuneido is to dump on one and load on the other.
 
@@ -676,6 +686,8 @@ jSuneido can recover the database from just the dbd (data) file, however for per
 
 Data values are "packed" to store in the database and to transfer client-server.
 
+For cSuneido and jSuneido to interoperate client-server, the packed format must be compatible.
+
 When a database or table is dumped, the values are in packed format. Since dumps are compatible between cSuneido and jSuneido, this means the packed format must also be compatible.
 
 Each packed value starts with a tag byte that indicates the type of value. In the case of true and false, the tag specifies the actual value.
@@ -684,7 +696,7 @@ Packed values are comparable as raw unsigned bytes. This allows indexing, sortin
 
 The length of packed values is tracked externally, it is not stored in the packed format. A zero length packed value (not even a tag) is taken as an empty zero length string.
 
-Packing is a two stage process. First, a packsize method is called on the value. Then the pack method itself is called, passing it a buffer with sufficient room.
+Packing is a two stage process. First, a pack size method is called on the value. Then the pack method itself is called, passing it a buffer with sufficient room.
 
 Unpacking looks at the tag and then calls static methods for the type.
 
@@ -701,6 +713,32 @@ Packed values are in ByteBuffer's.
 **_suneido.js_**
 
 ## Records
+
+Records in the database are stored as a list of packed values in a format that allows indexing individual values directly (like an array).
+
+To minimize space there are three variations using either 1, 2, or 4 byte integers for the offset.
+
+### Old Format (before 2019)
+
+The first byte is the mode, either 'c', 's', or 'l'.
+
+The second byte is 0.
+
+The third and fourth bytes are the number of values (little endian).
+
+Next are the length (including header) and the offsets of the values (little endian).
+
+Next are the packed values stored contiguously.
+
+### New Format (after 2019)
+
+An empty record is a single zero byte.
+
+The first and second bytes are the mode and the number of values (big endian). The mode is in the two high bits.
+
+Next are the length (including header) and the offsets of the values (big endian).
+
+Next are the packed values stored contiguously.
 
 ## Indexes
 
@@ -726,7 +764,7 @@ The first stage of optimization is **transform**. It makes changes that are assu
 
 The second stage is the cost based **optimize** which chooses strategies and indexes. The costs are estimated very roughly based on number of bytes read.
 
-Query operations implement multiple strategies. 
+Query operations implement multiple strategies.
 
 ## Transactions
 
