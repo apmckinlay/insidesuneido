@@ -22,6 +22,7 @@
     - [Arguments](#arguments)
     - [Parameters](#parameters)
     - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
+    - [Literal Arguments](#literal-arguments)
 - [Compiler](#compiler)
   - [Byte Code](#byte-code)
   - [Interpreter](#interpreter)
@@ -506,6 +507,16 @@ gSuneido also has "signatures" on ParamSpec and ArgSpec which provide fast match
 **_suneido.js_**
 
 Special comments in the code are used by a code generator to generate adapters for each function
+
+### Literal Arguments
+
+**_cSuneido_** attempt to optimize [...] expressions by compiling any constant arguments into an object and calling a special constructor.
+
+**_jSuneido_** attempts to optimize all call expressions by compiling more than 10 constant arguments into an object and passing it as with @args.
+
+However, these optimizations affect a small number of calls (less than 1% in jSuneido) so **_gSuneido_** does not implement this optimization.
+
+Related to this, as of 2019-05, [...] generates an object (rather than a record) if there are unnamed arguments. This is partly because objects are simpler. It is also a step towards removing unnamed/list elements from records and having only string named members (like instances).
 
 # Compiler
 
