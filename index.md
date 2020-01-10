@@ -606,7 +606,15 @@ Note: get_Name and Get_name are invalid which is also not ideal.
 
 Ideally, only class member definitions would handle getters specially (i.e. converting get_foo to Get_MyClass_foo). However, currently the same conversion is done to references. This is necessary because we have many get_ methods called as regular (non-getter) methods
 
-## Concurrency
+# Windows Interface
+
+## DLL
+
+## COM
+
+## SuneidoAPP
+
+# Concurrency
 
 # Database
 
