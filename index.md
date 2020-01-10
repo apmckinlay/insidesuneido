@@ -9,7 +9,7 @@
   - [Representation](#representation)
 - [Source Code Layout](#source-code-layout)
 - [Coding Style](#coding-style)
-- [Tests & Benchmarks](#tests--benchmarks)
+- [Tests &amp; Benchmarks](#tests-amp-benchmarks)
 - [Portable Tests](#portable-tests)
 - [Language](#language)
   - [Values](#values)
@@ -18,7 +18,7 @@
     - [Integers](#integers)
   - [Strings](#strings)
   - [Exceptions](#exceptions)
-  - [Functions & Methods](#functions--methods)
+  - [Functions &amp; Methods](#functions-amp-methods)
     - [Arguments](#arguments)
     - [Parameters](#parameters)
     - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
@@ -29,10 +29,14 @@
   - [Classes](#classes)
     - [Private Class Members](#private-class-members)
     - [Getters](#getters)
-  - [Concurrency](#concurrency)
+- [Windows Interface](#windows-interface)
+  - [DLL](#dll)
+  - [COM](#com)
+  - [SuneidoAPP](#suneidoapp)
+- [Concurrency](#concurrency)
 - [Database](#database)
   - [Storage](#storage)
-  - [Shutdown & Startup](#shutdown--startup)
+  - [Shutdown &amp; Startup](#shutdown-amp-startup)
   - [Recovery](#recovery)
   - [Packing](#packing)
   - [Records](#records)
@@ -608,13 +612,53 @@ Ideally, only class member definitions would handle getters specially (i.e. conv
 
 # Windows Interface
 
+cSuneido and gSuneido have interfaces to Windows facilities.
+
+A Windows interface for jSuneido was implemented and was functional, but it was not used and not maintained so eventually it was removed. One of the factors was that having to have a JRE made it much more heavy
+
 ## DLL
+
+**_cSuneido_**
+
+cSuneido has a general purpose DLL interface. The DLL functions, structs, and callbacks are defined in Suneido code. (primarily in stdlib)
+
+**_gSuneido_**
+
+gSuneido takes a different approach. The DLL functions, structs, and callbacks are built-in and cannot be defined in Suneido code. This was partly to avoid writing the general purpose facility, although in the end it was probably more work to write them all in Go. The other reason was that the cSuneido approach is inherently dangerous. If a definition is wrong you can easily corrupt memory or crash.
+
+Originally this was written using syscall.SysCall but this turned out to be unstable (see [here](https://thesoftwarelife.blogspot.com/2019/10/gsuneido-roller-coaster.html) and [here](https://thesoftwarelife.blogspot.com/2020/01/recurring-nightmares.html)), probably related to Go's garbage collection, escape analysis, and moving/growing stacks. There were also questions related to threading. cSuneido only ever had a single real thread that everything ran on, so there were no threading issues. (See [Concurrency](#concurrency)) Go not only uses multiple threads but also runs multiple goroutines on a single thread. Each thread in Windows has its own event queue and message loop. The simplest approach is to use one UI thread. gSuneido isolates the DLL calls and the message loop etc. in a single thread created by cgo outside of Go.
 
 ## COM
 
+Only the IDispatch interface is implemented.
+
+This is used primarily for the browser control and Image.
+
+It might be better to make Image built-in. It was originally built-in on cSuneido but it was moved to stdlib to work with the jSuneido Windows interface.
+
+It can also be used to automate external applications with COM interfaces.
+
 ## SuneidoAPP
 
+This is the suneido: protocol used with the browser control.
+
 # Concurrency
+
+**_cSuneido_**
+
+cSuneido uses one thread with multiple fibers. Since fibers only yield explicitly, we don't have to worry about concurrency or locking. However, blocking IO is an issue.
+
+cSuneido uses a thread to automatically change to the wait cursor if the message loop isn't running.
+
+The database server also used fibers per connection.
+
+**_jSuneido_**
+
+jSuneido implements Suneido Thread's with actual threads. Threads are mostly isolated, but mutable objects can be shared, so concurrency is a concern. There is some locking, but it is probably not complete or sufficient to prevent all possible concurrency problems.
+
+The database server also uses threads. In this area, the concurrency has been carefully thought out and is complete as far as we know.
+
+**_gSuneido_**
 
 # Database
 
