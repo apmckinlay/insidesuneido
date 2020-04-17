@@ -9,7 +9,7 @@
   - [Representation](#representation)
 - [Source Code Layout](#source-code-layout)
 - [Coding Style](#coding-style)
-- [Tests &amp; Benchmarks](#tests-amp-benchmarks)
+- [Tests & Benchmarks](#tests--benchmarks)
 - [Portable Tests](#portable-tests)
 - [Language](#language)
   - [Values](#values)
@@ -18,7 +18,7 @@
     - [Integers](#integers)
   - [Strings](#strings)
   - [Exceptions](#exceptions)
-  - [Functions &amp; Methods](#functions-amp-methods)
+  - [Functions & Methods](#functions--methods)
     - [Arguments](#arguments)
     - [Parameters](#parameters)
     - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
@@ -36,7 +36,7 @@
 - [Concurrency](#concurrency)
 - [Database](#database)
   - [Storage](#storage)
-  - [Shutdown &amp; Startup](#shutdown-amp-startup)
+  - [Shutdown & Startup](#shutdown--startup)
   - [Recovery](#recovery)
   - [Packing](#packing)
   - [Records](#records)
@@ -532,17 +532,27 @@ Note: There is also a parser written in Suneido (Tdop), however it is quite slow
 
 Compiling is done in a single pass, with byte code generated during parsing. This is fast and memory efficient, but not as flexible as using an intermediate AST.
 
+Constant folding is done during byte code emit.
+
 **_jSuneido_**
 
 Parsing produces an AST which is then used to generate Java byte code using the Asm library.
+
+Constant folding is done during code generation.
+
+An extra pass is done over the AST to determine which blocks can be compiled as regular functions instead of closures.
 
 **_gSuneido_**
 
 Parsing produces an AST which is then used to generate byte code. (Similar to jSuneido)
 
+gSuneido uses [Precedence Climbing Expression Parsing](https://thesoftwarelife.blogspot.com/2018/10/precedence-climbing-expression-parsing.html), whereas cSuneido and jSuneido just use recursive descent.
+
 Constant folding is done as part of the AST building. This is naturally bottom up, and eliminates the need for a separate tree traversal. It is implemented as a wrapper (decorator) around the node factory, so it is easily bypassed if you want the AST one to one with the source code.
 
-gSuneido uses [Precedence Climbing Expression Parsing](https://thesoftwarelife.blogspot.com/2018/10/precedence-climbing-expression-parsing.html), whereas cSuneido and jSuneido just use recursive descent.
+gSuneido also does [constant *propagation*](https://thesoftwarelife.blogspot.com/2020/04/constant-propogation-and-folding.html). Final variables, ones that are assigned once and never modified are identified during parsing. If any are found then an extra pass is made over the AST to propagate. Folding is also done during this pass because propagation may create new opportunities.
+
+If any blocks are found during parsing, an extra pass is done over the AST to determine which of them can be compiled as regular functions instead of closures.
 
 **_suneido.js_**
 
