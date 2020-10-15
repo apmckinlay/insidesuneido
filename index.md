@@ -670,6 +670,16 @@ The database server also uses threads. In this area, the concurrency has been ca
 
 **_gSuneido_**
 
+Suneido Thread's are Go routines.
+
+Mutable Value's have a concurrent flag. When the concurrent flag is false, no locking is done. When the object propogates to other threads, the SetConcurrent method in the Value interface sets the concurrent flag to true. The flag is set while the value is still single threaded and the flag is not changed again after being set. This makes it safe to access with no locking. SetConcurrent is recursive and deep - it must call SetConcurrent on all reachable child values. And if new child values are added to a concurrent value (e.g. Object) the new child value must be set to concurrent. The global Suneido object is concurrent from the start. Concurrency is contagious and irreversible.
+
+Deep equal and compare are structured to only lock one object at a time to avoid deadlock. This means the result is undefined if there are concurrent modifications. The locking is just to prevent data race errors or corruption.
+
+Since the Go mutex is **not** reentrant, to avoid deadlock a method that locks must **not** call another method that locks. The coding convention is that public (capitalized) methods lock, and private (uncapitalized) methods do not. However, this is not followed 100%. Locking public methods must not call other locking public methods. This means there is often a public method that locks, and a private method that does the work.
+
+Synchronized is a global reentrant mutex. Only one thread can be inside Synchronized at a time. Different Synchonized blocks are not independant.
+
 # Database
 
 ![database design](images/suneido&#32;dbms&#32;design.svg)
