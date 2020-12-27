@@ -23,6 +23,7 @@
     - [Parameters](#parameters)
     - [Passing Arguments to Parameters](#passing-arguments-to-parameters)
     - [Literal Arguments](#literal-arguments)
+  - [Iterators and Sequences](#iterators-and-sequences)
 - [Compiler](#compiler)
   - [Byte Code](#byte-code)
   - [Interpreter](#interpreter)
@@ -85,6 +86,8 @@ The JavaScript implementation (suneido.js) was started in 2015. Unlike gSuneido,
 
 Axon is currently using jSuneido for all production servers, with cSuneido for the desktop clients. The cSuneido database implementation is still maintained but we only use it for development.
 
+As of Dec. 2020, Axon is migrating customers to using gSuneido for desktop clients.
+
 ## Future
 
 Looking forward, one possible path would be to replace the back end (currently jSuneido) with gSuneido and the front end (currently cSuneido) with suneido.js
@@ -112,11 +115,11 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 
 **_gSuneido_** - Go
 
-- Incomplete, work in progress
+- Client side is complete, now working on the database.
 - Has its own byte code and interpreter
 - Suneido values (including integers and strings) implement the Value interface
 - Uses panic and recover to implement exceptions
-- Aiming to work in both 32 and 64 bit
+- 64 bit
 
 **_suneido.js_** - JavaScript
 
@@ -126,13 +129,13 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 - Written in TypeScript
 - One challenge is to somehow run existing user interfaces (which are win32 specific and assume low latency)
 - Another challenge is that current code assumes blocking/synchronous, but browsers want async.
-- Although it's not specifically targeted, most of the development is with V8 with node.js
+- Targetting Chrome (or Chromium browsers) initially
 
 # Low Level
 
 ## Representation
 
-cSuneido inadvertently used little endian (least significant byte first) for some things (e.g. records/tuples) because that was native byte order on x86. 
+cSuneido inadvertently used little endian (least significant byte first) for some things (e.g. records/tuples) because that was native byte order on x86.
 
 But to make packed values sort properly, numbers had to be stored big endian (most significant byte first).
 
@@ -162,6 +165,18 @@ Source files starting with an "su" prefix generally implement things that are vi
 - **util** - code that is not specific to Suneido
 
 **_gSuneido_**
+
+- makefile
+- gsuneido.go
+- **runtime** - the interpreter and the core built-in types
+- **builtin** - built-in functions and classes
+- **compile** - lexer, parser, AST, byte code generation
+- **options** - command line options
+- **util** - low level general purpose utilities
+- **genny** - templates for generic code generation
+- **dbms** - primarily the dbms client
+- **db19** - work in progress on the gSuneido database implementation
+- **res** - windows resources
 
 **_suneido.js_**
 
@@ -292,7 +307,7 @@ Previously there were some minor issues with inconsistent results between *cSune
 
 Unfortunately, JavaScript does not have 64 bit integers, it only has binary floating point numbers, with bitwise operations defined as 32 bit.  (Internally, JavaScript implementations usually use integers.) To work around this, *suneido.js* uses JavaScript floats as 52 bit integers. This provides a little over 15 digits of precision - not quite the 16 that Suneido nominally provides.
 
-For compatibility, the packed format was *not* changed with the switch to Dnum. However, the old format is not the most efficient for Dnum. The plan is to switch this (along with several other representation improvements - records/tuples and packed objects) in 2019. 
+For compatibility, the packed format was *not* changed with the switch to Dnum. However, the old format is not the most efficient for Dnum. The plan is to switch this (along with several other representation improvements - records/tuples and packed objects) in 2019.
 
 [Bit Twiddling (Dnum)](https://thesoftwarelife.blogspot.com/2018/03/bit-twiddling.html)
 
@@ -522,6 +537,43 @@ However, these optimizations affect a small number of calls (less than 1% in jSu
 
 Related to this, as of 2019-05, [...] generates an object (rather than a record) if there are unnamed arguments. This is partly because objects are simpler. It is also a step towards removing unnamed/list elements from records and having only string named members (like instances).
 
+## Iterators and Sequences
+
+A user defined iterator is a class providing a Next method that returns the instance itself when it reaches the end. The reason for using itself rather than e.g. false is that the iterator itself is highly unlikely to be an actual value. Unfortunately, this convention is not used by some things like queries, which return false. (In this case safely, because they otherwise return records.)
+
+A for-in loop uses an iterator.
+
+```
+for x in ob
+```
+
+is equivalent to:
+
+```
+iter = ob.Iter()
+while iter != (x = iter.Next())
+```
+
+However, user defined classes cannot define their own Iter method because it is built-in on classes and instances to iterate through the members.
+
+A **sequence** is a kind of virtual object that wraps an iterator and instantiates it lazily. Sequences are returns by some built-in methods like Seq and object.Members. They can also be explicitly created using the Suneido language Sequence(iter) function.
+
+The iterator passed to Sequence should also have Infinite? and Dup methods. An infinite sequence (e.g. all the odd numbers) will throw an error if anything tries to instantiate it. Dup should return a copy of the iterator that is reset to start at the beginning.
+
+In most cases, sequences can be used transparently. However there are subtle differences, primarily that before the sequence is instantiated it reflects changes in the underlying data. For the rare case where this is relevant, sequences have an Instantiate() method.
+
+**_gSuneido_**
+
+Internal iterators implement the **runtime.Iter** interface with Next, Infinite, and Dup.
+
+**SuIter** is a Value that adapts anything implementing the runtime.Iter interface so it can be used as a Suneido language iterator.
+
+**wrapIter** adapts a Suneido iterator (a class with Next,Dup,Infinite) to the runtime.Iter interface i.e. the reverse of runtime.SuIter
+
+The Suneido language **Sequence** function returns an SuSequence wrapping a Suneido iterator.
+
+SuSequence is a Value that wraps a runtime.Iter and instantiates it lazily. The Iter is either built-in e.g. Seq or object.Members, or user defined via Suneido Sequence. SuSequence wraps a runtimer.Iter rather than a Suneido iterator so it is more efficient for built-in iterators like object.Members.
+
 # Compiler
 
 Suneido uses a hand-written lexical scanner and recursive descent parser.
@@ -560,15 +612,15 @@ Currently (2018) jSuneido is used to parse to an AST which is then used by Sunei
 
 ## Byte Code
 
-**jSuneido**
+**_jSuneido_**
 
 Uses Java byte code.
 
-**cSuneido**
+**_cSuneido_**
 
 Uses every possible byte value. This makes the code compact but it complicates the interpreter.
 
-**gSuneido**
+**_gSuneido_**
 
 Does not pack any options or arguments into the op codes or use variable length ints for arguments. This simplifies the interpreter. It also means there are lots of byte codes available, allowing specialized op codes for things like for-in.
 
@@ -602,11 +654,11 @@ Anonymous classes are given a system generated internal name (e.g. Class123) for
 
 Privatization is done at compile time, for class members like:
 
-    foo: 123
+`foo: 123`
 
 and for member references like:
 
-    .foo
+`.foo`
 
 ### Getters
 
@@ -672,7 +724,7 @@ The database server also uses threads. In this area, the concurrency has been ca
 
 Suneido Thread's are Go routines.
 
-Mutable Value's have a concurrent flag. When the concurrent flag is false, no locking is done. When the object propogates to other threads, the SetConcurrent method in the Value interface sets the concurrent flag to true. The flag is set while the value is still single threaded and the flag is not changed again after being set. This makes it safe to access with no locking. SetConcurrent is recursive and deep - it must call SetConcurrent on all reachable child values. And if new child values are added to a concurrent value (e.g. Object) the new child value must be set to concurrent. The global Suneido object is concurrent from the start. Concurrency is contagious and irreversible.
+Mutable Value's have a concurrent flag. When the concurrent flag is false, no locking is done. When the object propagates to other threads, the SetConcurrent method in the Value interface sets the concurrent flag to true. The flag is set while the value is still single threaded and the flag is not changed again after being set. This makes it safe to access with no locking. SetConcurrent is recursive and deep - it must call SetConcurrent on all reachable child values. And if new child values are added to a concurrent value (e.g. Object) the new child value must be set to concurrent. The global Suneido object is concurrent from the start. Concurrency is contagious and irreversible.
 
 Deep equal and compare are structured to only lock one object at a time to avoid deadlock. This means the result is undefined if there are concurrent modifications. The locking is just to prevent data race errors or corruption.
 
