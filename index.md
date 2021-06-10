@@ -47,7 +47,11 @@
   - [Queries](#queries)
     - [Query Optimization](#query-optimization)
   - [Transactions](#transactions)
-  
+  - [Repair](#repair)
+  - [Indexes](#indexes-1)
+    - [ixbuf](#ixbuf)
+  - [Metadata](#metadata)
+
 # Introduction
 
 This document explains the high level design and implementation of Suneido, including cSuneido (C++), jSuneido (Java), gSuneido (Go), suneido.js (JavaScript).
@@ -662,15 +666,11 @@ and for member references like:
 
 ### Getters
 
-If code reads a member that does not exist, Suneido will look for a "getter" i.e. a method that will provide the value, either Get_(name) or get_name or Get_Name
+If code reads a member that does not exist, Suneido will look for a "getter" i.e. a method that will provide the value, either Getter_(name) or getter_name or Getter_Name
 
-Private getters e.g. get_foo() are privatized to Get_MyClass_foo
+Private getters e.g. getter_foo() are privatized to Getter_MyClass_foo
 
-In retrospect, this was a poor naming choice because get_name and Get_Name are quite common names and get used without intending to be getters. A better choice might have been getter_name and Getter_Name. Unfortunately, this is difficult to change since it is hard to tell which methods are intended to be getters and which just happened to be named that way.
-
-Note: get_Name and Get_name are invalid which is also not ideal.
-
-Ideally, only class member definitions would handle getters specially (i.e. converting get_foo to Get_MyClass_foo). However, currently the same conversion is done to references. This is necessary because we have many get_ methods called as regular (non-getter) methods
+Note: Previously, getters were written as Get_ and get_ but this is a common name and was often used for regular methods, making it hard to know whether a method was intended to be a getter or not.
 
 # Windows Interface
 
@@ -883,7 +883,7 @@ Query where and extend expressions are a subset of language expressions. The sub
 
 Lexical scanning uses the same code as for the language with a different set of keywords.
 
-cSuneido has a separate code for parsing query expressions, but this means a lot of duplication.
+cSuneido has separate code for parsing query expressions, but this means a lot of duplication.
 
 jSuneido uses the same expression parser for both the language and queries. It uses different "generators" to build different AST nodes. However, the abstract generator complicates the parser somewhat.
 
@@ -892,6 +892,8 @@ Parsing builds an AST which is used to optimize and execute the query.
 Each query operation e.g. where or join is a node class. Optimization and execution is done by methods. All the node types inherit from Query.
 
 Query (and query expression) execution is done by a tree walking interpreter. There is no byte code as there is for the language.
+
+Lower level iterators stick at eof bidirectionally. i.e. once they hit eof, both Next and Prev will return eof. However, Query operations rewind after hitting eof. And then SuQuery sticks at eof unidirectionally. i.e. once Next hits eof it will stick, but Prev will give the last row, and vice versa.
 
 ### Query Optimization
 
@@ -930,3 +932,69 @@ Because UpdateTransaction tracks reads and writes, there are limits on how much 
 There are also limits on the number of overlapping transactions outstanding.
 
 BulkTransaction is used for load, compact, and rebuild. It is exclusive i.e. no other concurrent transactions are allowed. Unlike normal transactions, it writes to the database file incrementally, prior to commit.
+
+***gSuneido***
+
+Like jSuneido, versioning is handled by an append only database.
+
+Like cSuneido, and unlike jSuneido, the database is stored in a single suneido.db file containing both data and indexes. It is only ever appended to. Except that the size is written to the start of the file at shut down to determine at start up whether it was shut down properly (didn't crash). This is similar to jSuneido's .dbc file.
+
+gSuneido is intended to allow more concurrency than jSuneido. The global commit lock in jSuneido is a bottleneck, especially since all the writing to the database files is done during commit while holding the lock. gSuneido improves on this by:
+
+- Writing data records immediately. This means some wasted abandoned space if the transaction aborts, but it means less work for commit.
+- Many actions are "fire and forget" i.e. the client does not wait for the action to complete. This allows client processing to proceed concurrently with server processing. 
+- Conflict checking is done incrementally, by background threads.
+- Index updates are merged by background threads. Unmerged index layers will slow down reads, but in many/most cases the merges will happen immediately after commits so they will not affect most reads. However, there will normally be at least two layers - the on disk indexes, and the in-memory updates since the last persist. (Unless there have been no updates since the last persist.)
+- Like jSuneido, indexes are persisted to disk periodically (e.g. once per minute). This reduces write amplification.
+- Commit is simple, it must wait for its conflict checking to finish, and then it merges its state with the global master state. This is much less work and faster than jSuneido.
+
+Suneido does not use a log (although in a sense, the append-only database serves as the log). This means that transactions are not necessary durable (the 'D' in ACID) in the case of system failure (OS or hardware). Transactions are guaranteed to be atomic (the 'A' in ACID) however. In modern computer systems, with multiple layers of caching, it is difficult to guarantee that data has been durably written to the storage device, especially when using memory mapped file access. It is also slow to force this and wait for it to complete. Writing a separate log also doubles the amount of writing since every change must be written to the log as well as the database. Suneido trades a small amount of durability for speed. A crash may also lose some committed transactions because indexes are only persisted once per minute. Note that even with a separate log you are not immune to hardware failures that affect both the log and the database.
+
+## Repair
+
+Unlike cSuneido and jSuneido, gSuneido's database file is not intended to be scanned. For example, data records are not tagged with what table they belong to. Nor are deletes recorded explicitly. The only way to find the data records is via the indexes, and the only way to find the indexes is via the meta data that is pointed to by the state root.
+
+Think of the database file as a bucket. Data records are added to the bucket as they are created. During the next persist (every minute) index updates will be added and then a new "state". The state points to the indexes which point to the data records. Everything is reachable from the state (and only reachable from the state).
+
+When the server shuts down there is a final persist so the last thing in the file (the top of the bucket) is the root of the state.
+
+State roots are delimited by magic values. When the server starts it checks if the end of the database is a valid state root. If not, then it searches backwards for the magic values to find a valid state. Each state corresponds to the value of the database at a given point in time. 
+
+Once a state root has been located (either at the end of the file, or by searching) it is checked. For a normal startup, where a valid state is found at the end of the file, a quick check is done. Otherwise, it means the database was not shut down properly and a full check is done. This could be because it crashed, or because the operating system crashed, or the hardware itself (e.g. power failure). 
+
+A quick check takes advantage of the append-only nature of the database. This means that offset in the database file correspond roughly to age. In addition, immutable btree updates mean path copying, so the paths leading to newer records will be later offsets in the file. So the quick check can traverse (and check) the newer data. This is based on the idea that if the server crashes, that it will be recent data that may not be written correctly.
+
+A full check checks entire indexes (in parallel) i.e. that the keys in the index match the values in the data records, and that the indexes match each other in terms of number of records and checksum of record offsets.
+
+If checking fails for a given state, then we search backwards for a previous state. If no valid state can be found then the database is not repairable.
+
+## Indexes
+
+gSuneido btrees use [partial incremental encoding](https://thesoftwarelife.blogspot.com/2019/02/partial-incremental-encoding.html) which greatly reduces the size of the btrees compared to storing full keys. On average, less than 2 bytes per key are stored in the index.
+
+This is a tradeoff between complexity, read speed, and index size. More compact btrees means higher fanout which means faster lookups. However, insertion and deletion are more complex due to the encoding.
+
+When the server is stopped, all the indexes are stored in the btrees in the database file. However, while the server is running, indexes are "layered". In progress transactions store their updates as an "overlay" on the index. When a transaction commits, this layer is added to the global state. Background processes merge these layers. It is not until the next persist (e.g. once per minute) that the in memory layers are merged and written to the btees in the database file.
+
+### ixbuf
+
+In memory index layers are ixbuf's - simple list of lists. A bit like a btree but only two levels - a root and leaves. The size of the leaves is adaptive. The more entries in the ixbuf, the larger the leaves are allowed to grow before splitting. The policy is designed so that the root node ends up a similar size to the leaves.
+
+A transaction that modifies an index creates a mutable ixbuf layer for it. Mutable ixbuf's are thread contained.  Once a transaction commits the ixbuf becomes read-only so it can be safely used by multiple threads.
+
+Many transactions are small, which means many ixbuf's are small. Transactions are limited in terms of the number of updates they can do (currently 10,000). This means the maximum ixbuf size created by a transaction is 10,000 entries or roughly 100 leaf nodes. Merging of ixbuf's from multiple transactions can result in larger ixbuf's.
+
+ixbuf's are merged by a background process. This merging takes advantage of the ixbuf's being immutable and may reuse nodes in the result. 
+
+## Metadata
+
+The metadata is split into two parts - the schema and the info. The info is the part that changes more frequently - the number of records and total size of each table (used by the query optimizer) and the indexes. Separating frequently changing information reduces the size of the updates that must be written to disk. The info includes the offsets of the roots of the btrees.
+
+The schema and info are stored in [hash array mapped tries](https://thesoftwarelife.blogspot.com/2020/07/hash-array-mapped-trie-in-go.html). Updates are written to the database file along with the index persists.
+
+Once again, there is a tradeoff between writing and reading. For writing, it's faster to save just the changes but then you end up with a long linked list of changes, which is slow to read.  Note that we only have to read it at startup, after that we  can use the in-memory version. If you save the entire meta data at each persist, that makes it easy to read, but it causes write amplification because you're rewriting all the unchanged data.
+
+Instead, we compromise. Sometimes we write just the changes. Other times, to prevent the linked list from getting too big, we write bigger chunks. This is a bit like a [log structured merge tree](https://en.wikipedia.org/wiki/Log-structured_merge-tree) (LSM tree).
+
+We have all the data in memory, so rather than actually merging data from disk, we track the "age" of each entry (when it was last updated) and then we can write a bigger chunk by going back further in age.
+
