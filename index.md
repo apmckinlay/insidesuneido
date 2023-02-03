@@ -44,12 +44,13 @@
     - [Old Format (before 2019)](#old-format-before-2019)
     - [New Format (after 2019)](#new-format-after-2019)
   - [Indexes](#indexes)
+  - [Optimizations](#optimizations)
+    - [Btrees](#btrees)
+    - [ixbuf](#ixbuf)
   - [Queries](#queries)
     - [Query Optimization](#query-optimization)
   - [Transactions](#transactions)
   - [Repair](#repair)
-  - [Indexes](#indexes-1)
-    - [ixbuf](#ixbuf)
   - [Metadata](#metadata)
 
 # Introduction
@@ -133,7 +134,7 @@ There are two sides to "why". Why did I write Suneido? And why did Axon (Suneido
 - Written in TypeScript
 - One challenge is to somehow run existing user interfaces (which are win32 specific and assume low latency)
 - Another challenge is that current code assumes blocking/synchronous, but browsers want async.
-- Targetting Chrome (or Chromium browsers) initially
+- Targeting Chrome (or Chromium browsers) initially
 
 # Low Level
 
@@ -177,9 +178,8 @@ Source files starting with an "su" prefix generally implement things that are vi
 - **compile** - lexer, parser, AST, byte code generation
 - **options** - command line options
 - **util** - low level general purpose utilities
-- **genny** - templates for generic code generation
-- **dbms** - primarily the dbms client
-- **db19** - work in progress on the gSuneido database implementation
+- **dbms** - the dbms client and server
+- **db19** - the gSuneido database implementation
 - **res** - windows resources
 
 **_suneido.js_**
@@ -648,7 +648,7 @@ suneido.js compiles to JavaScript which is run by e.g. the browser.
 
 ## Classes
 
-Classes and instances of classes were originally just objects with the additon of a class reference. In jSuneido classes and instances became maps from strings (member names) to values. (No unnamed list members.) This approach was migrated to **cSuneido**, and is also used in **gSuneido**.
+Classes and instances of classes were originally just objects with the addition of a class reference. In jSuneido classes and instances became maps from strings (member names) to values. (No unnamed list members.) This approach was migrated to **cSuneido**, and is also used in **gSuneido**.
 
 ### Private Class Members
 
@@ -730,7 +730,7 @@ Deep equal and compare are structured to only lock one object at a time to avoid
 
 Since the Go mutex is **not** reentrant, to avoid deadlock a method that locks must **not** call another method that locks. The coding convention is that public (capitalized) methods lock, and private (uncapitalized) methods do not. However, this is not followed 100%. Locking public methods must not call other locking public methods. This means there is often a public method that locks, and a private method that does the work.
 
-Synchronized is a global reentrant mutex. Only one thread can be inside Synchronized at a time. Different Synchonized blocks are not independant.
+Synchronized is a global reentrant mutex. Only one thread can be inside Synchronized at a time. Different Synchronized blocks are not independent.
 
 # Database
 
@@ -877,6 +877,48 @@ Next are the packed values stored contiguously.
 
 ## Indexes
 
+Suneido supports three kinds of indexes:
+
+- keys - do not allow duplicates
+- indexes - allows duplicates
+- unique indexes - unique like a key, but allows multiple empty values
+
+All three are implemented with the same btrees. Because the btrees require unique values, additional data is added to indexes and empty values in unique indexes. jSuneido added the record address, but that means every update changes the index. gSuneido adds key field(s) instead. Thanks to the encoding that gSuneido btrees use, this does not add much space overhead.
+
+Uniqueness is enforced by lookups prior to outputting or updating records.
+
+## Optimizations
+
+It's possible to have redundant keys e.g. key(a) and key(a,b). gSuneido identifies "primary" keys i.e. ones that do not include any other key and only does uniqueness lookups on these.
+
+Originally, the first, shortest key was used to make non-key indexes unique. This was improved to select the key that required the least number of additional fields. e.g. with key(a,b) key(c,d,e) index(d,e) it's better to use key(c,d,e) because it only requires one additional field (c).
+
+We also identify unique indexes that contain a key. Like a non-primary key, these do not require any uniqueness lookups.
+
+### Btrees
+
+gSuneido btrees use [partial incremental encoding](https://thesoftwarelife.blogspot.com/2019/02/partial-incremental-encoding.html) which greatly reduces the size of the btrees compared to storing full keys. On average, less than 2 bytes per key are stored in the index.
+
+This is a tradeoff between complexity, read speed, and index size. More compact btrees means higher fanout which means faster lookups. However, insertion and deletion are more complex due to the encoding.
+
+When the server is stopped, all the indexes are stored in the btrees in the database file. However, while the server is running, indexes are "layered". In progress transactions store their updates as an in-memory "overlay" on the index. When a transaction commits, this layer is added to the global state. Background processes merge these layers. It is not until the next persist (e.g. once per minute) that the in memory layers are written to the btrees in the database file.
+
+One advantage of only updating the disk btrees once per minute is that it reduces the write amplification from the append-only database.
+
+This is a little bit similar to log structured merge trees. LSM trees are usually used to handle high insert rates. With gSuneido it is used primarily to improve concurrency. Transactions can insert into their own private overlays with no locking, the overlays can quickly be layered onto the global state, and they can be merged lazily in the background.
+
+The downside (as with LSM trees) is increased read overhead since multiple layers may have to be accessed.
+
+### ixbuf
+
+In memory index layers are ixbuf's - simple list of lists. A bit like a btree but only two levels - a root and leaves. The size of the leaves is adaptive. The more entries in the ixbuf, the larger the leaves are allowed to grow before splitting. The policy is designed so that the root node ends up a similar size to the leaves.
+
+A transaction that modifies an index creates a mutable ixbuf layer for it. Mutable ixbuf's are thread contained.  Once a transaction commits the ixbuf becomes read-only so it can be safely used by multiple threads.
+
+Many transactions are small, which means many ixbuf's are small. Transactions are limited in terms of the number of updates they can do (currently 10,000). This means the maximum ixbuf size created by a transaction is 10,000 entries or roughly 100 leaf nodes. Merging of ixbuf's from multiple transactions can result in larger ixbuf's.
+
+ixbuf's are merged by a background process. This merging takes advantage of the ixbuf's being immutable and may reuse nodes in the result. (persistent immutable data structure)
+
 ## Queries
 
 Query where and extend expressions are a subset of language expressions. The subset has expanded over time.
@@ -897,11 +939,84 @@ Lower level iterators stick at eof bidirectionally. i.e. once they hit eof, both
 
 ### Query Optimization
 
-The first stage of optimization is **transform**. It makes changes that are assumed to be always beneficial. It does not estimate any costs. Transform rearranges
+Query optimization tries to find a good way to execute the query. Optimization does not change the results, just the way they are derived. It does not necessarily find the best strategy. Optimization should not affect Nrows, Header, Columns, or Keys.
 
-The second stage is the cost based **optimize** which chooses strategies and indexes. The costs are estimated very roughly based on number of bytes read.
+The first stage is **transform**. It makes changes that are assumed to be always beneficial. It does not estimate any costs and it does not look at the data. 
+
+The second stage is the cost based **optimize** which chooses strategies and indexes. 
 
 Query operations implement multiple strategies.
+
+#### Transform
+
+Transform does several things: 
+
+- remove unnecessary operations (where, extend)
+
+e.g. `table where true`
+
+=> `table`
+
+- eliminate operations or branches that cannot produce any results
+
+e.g. `table1 join (table2 where false)`
+
+=> `table1`
+
+- combine adjacent equal operations (where, rename, extend, project)
+
+e.g. `table where a = 1 where b = 2` 
+
+=> `table where a = 1 and b = 2`
+
+- move where's and project's closer to the tables
+
+e.g. `table rename b to a where a = 1`
+
+=> `table where b = 1 rename b to a`
+
+Moving operations may make them adjacent so they can be merged.
+
+Moving where's toward the tables helps in two ways:
+
+- it reduces the number of rows that later operations must process
+- if the where can be moved adjacent to the table it can make use of table indexes
+
+#### Fixed
+
+In Suneido query processing, "fixed" refers to fields that are known to have one or more specific constant values.
+
+In the simplest case, fixed comes from something like:
+
+```
+table where mykey = 123
+```
+
+We know that all the results from this query will have mykey = 123 (even though table may have more different values).
+
+Fixed tracks multiple values e.g.
+
+```
+(table where mykey = 123) union (table where mykey = 456)
+```
+
+However, in most cases we only take advantage of fixed with a single value.
+
+Single value fixed are used, for example, to eliminate fields from sorting. Reducing the fields can make more indexes applicable. For example, if you sort by a,b,c and b is fixed, then you can use an index on a,c. Or vice versa, if you sort by a,c and b is fixed, then you can use an index on a,b,c.
+
+Fixed is one of the methods in the Query interface.
+
+### Mode
+
+Query optimization and strategy choice is affected by the "mode" of the query - read, update, or cursor.
+
+A cursor is a query that is separate from any specific transaction. Instead, a transaction must be supplied to Get.
+
+Cursors do not allow temporary indexes. This is because the information in the temporary index would become outdated and incorrect.
+
+Technically, temporary indexes should also not be allowed in update mode, again because the information in the index could get out of date. However, this was overlooked for many years, and now it would be hard to restrict. In practice, it hasn't  been a problem.
+
+Certain other operations (**project**, **summarize**) also create their own equivalent of temporary indexes. Currently gSuneido **project** correctly only allows this in read mode, but **summarize** allows it in any mode, so it is possible to get outdated information.
 
 ## Transactions
 
@@ -909,7 +1024,7 @@ Suneido implements "ACID" transactions - atomic, consistent, isolated, and durab
 
 Transactions see the database as of their start time.
 
-Suneido uses optimistic multi-version concurrency control. Update transactions do not lock records. However, they may fail to comit if there is a  conflict with another update transaction.
+Suneido uses optimistic multi-version concurrency control. Update transactions do not lock records. However, they may fail to commit if there is a  conflict with another update transaction.
 
 Read-only transactions do not do any locking and do not conflict with any other transactions.
 
@@ -967,24 +1082,6 @@ A quick check takes advantage of the append-only nature of the database. This me
 A full check checks entire indexes (in parallel) i.e. that the keys in the index match the values in the data records, and that the indexes match each other in terms of number of records and checksum of record offsets.
 
 If checking fails for a given state, then we search backwards for a previous state. If no valid state can be found then the database is not repairable.
-
-## Indexes
-
-gSuneido btrees use [partial incremental encoding](https://thesoftwarelife.blogspot.com/2019/02/partial-incremental-encoding.html) which greatly reduces the size of the btrees compared to storing full keys. On average, less than 2 bytes per key are stored in the index.
-
-This is a tradeoff between complexity, read speed, and index size. More compact btrees means higher fanout which means faster lookups. However, insertion and deletion are more complex due to the encoding.
-
-When the server is stopped, all the indexes are stored in the btrees in the database file. However, while the server is running, indexes are "layered". In progress transactions store their updates as an "overlay" on the index. When a transaction commits, this layer is added to the global state. Background processes merge these layers. It is not until the next persist (e.g. once per minute) that the in memory layers are merged and written to the btees in the database file.
-
-### ixbuf
-
-In memory index layers are ixbuf's - simple list of lists. A bit like a btree but only two levels - a root and leaves. The size of the leaves is adaptive. The more entries in the ixbuf, the larger the leaves are allowed to grow before splitting. The policy is designed so that the root node ends up a similar size to the leaves.
-
-A transaction that modifies an index creates a mutable ixbuf layer for it. Mutable ixbuf's are thread contained.  Once a transaction commits the ixbuf becomes read-only so it can be safely used by multiple threads.
-
-Many transactions are small, which means many ixbuf's are small. Transactions are limited in terms of the number of updates they can do (currently 10,000). This means the maximum ixbuf size created by a transaction is 10,000 entries or roughly 100 leaf nodes. Merging of ixbuf's from multiple transactions can result in larger ixbuf's.
-
-ixbuf's are merged by a background process. This merging takes advantage of the ixbuf's being immutable and may reuse nodes in the result. 
 
 ## Metadata
 
