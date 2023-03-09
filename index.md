@@ -845,13 +845,35 @@ Packed values are in ByteBuffer's.
 
 **_gSuneido_**
 
+Packed values are normally in strings.
+
 **_suneido.js_**
+
+### Objects
+
+Objects and records contain nested packed values.
+
+If there are no members the packed format is just the tag.
+
+Following the tag are:
+
+- unnamed members:
+  - varuint count (possibly zero)
+  - one or more of:
+    - varuint size + packed value
+- named members:
+  - varuint count (possibly zero)
+  - one or more of:
+    - varuint size + packed member name value
+    - varuint size + packed member value
 
 ## Records
 
 Records in the database are stored as a list of packed values in a format that allows indexing individual values directly (like an array).
 
 To minimize space there are three variations using either 1, 2, or 4 byte integers for the offset.
+
+Note: These Records are different from SuRecord which is a Suneido value.
 
 ### Old Format (before 2019)
 
